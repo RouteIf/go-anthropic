@@ -54,7 +54,7 @@ func main() {
         }
 		return
 	}
-	fmt.Println(resp.Content[0].Text)
+	fmt.Println(*resp.Content[0].Text)
 }
 ```
 
@@ -93,7 +93,7 @@ func main() {
         }
 		return
 	}
-	fmt.Println(resp.Content[0].Text)
+	fmt.Println(*resp.Content[0].Text)
 }
 ```
 
@@ -152,7 +152,7 @@ func main() {
         }
 		return
 	}
-	fmt.Println(resp.Content[0].Text)
+	fmt.Println(*resp.Content[0].Text)
 }
 ```
 </details>
@@ -238,6 +238,76 @@ func main() {
 }
 ```
 
+</details>
+<details>
+<summary>VertexAI example</summary>
+
+
+If you are using a Google Credentials file, you can use the following code to create a client:
+
+```go
+
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+
+	"github.com/liushuangls/go-anthropic/v2"
+	"golang.org/x/oauth2/google"
+)
+
+func main() {
+	credBytes, err := os.ReadFile("<path to your credentials file>")
+	if err != nil {
+		fmt.Println("Error reading file")
+		return
+	}
+
+	ts, err := google.JWTAccessTokenSourceWithScope(credBytes, "https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/cloud-platform.read-only")
+	if err != nil {
+		fmt.Println("Error creating token source")
+		return
+	}
+
+	// use JWTAccessTokenSourceWithScope
+	token, err := ts.Token()
+	if err != nil {
+		fmt.Println("Error getting token")
+		return
+	}
+
+	fmt.Println(token.AccessToken)
+
+	client := anthropic.NewClient(token.AccessToken, anthropic.WithVertexAI("<YOUR PROJECTID>", "<YOUR LOCATION>"))
+	
+	resp, err := client.CreateMessagesStream(context.Background(), anthropic.MessagesStreamRequest{
+		MessagesRequest: anthropic.MessagesRequest{
+			Model: anthropic.ModelClaude3Haiku20240307,
+			Messages: []anthropic.Message{
+				anthropic.NewUserTextMessage("What is your name?"),
+			},
+			MaxTokens: 1000,
+		},
+		OnContentBlockDelta: func(data anthropic.MessagesEventContentBlockDeltaData) {
+			fmt.Printf("Stream Content: %s\n", *data.Delta.Text)
+		},
+	})
+	if err != nil {
+		var e *anthropic.APIError
+		if errors.As(err, &e) {
+			fmt.Printf("Messages stream error, type: %s, message: %s", e.Type, e.Message)
+		} else {
+			fmt.Printf("Messages stream error: %v\n", err)
+		}
+		return
+	}
+	fmt.Println(*resp.Content[0].Text)
+}
+
+```
 </details>
 
 ## Acknowledgments

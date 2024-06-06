@@ -13,3 +13,16 @@ const (
 	RoleUser      = "user"
 	RoleAssistant = "assistant"
 )
+
+func translateVertexModel(model string) string {
+	switch model {
+	case ModelClaude3Haiku20240307:
+		return "claude-3-haiku@20240307"
+	case ModelClaude3Opus20240229:
+		return "claude-3-opus@20240229"
+	case ModelClaude3Sonnet20240229:
+		return "claude-3-sonnet@20240229"
+	default:
+		return model
+	}
+}

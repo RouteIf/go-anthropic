@@ -34,7 +34,7 @@ func (c *Client) CreateCompleteStream(ctx context.Context, request CompleteStrea
 	request.Stream = true
 
 	urlSuffix := "/complete"
-	req, err := c.newStreamRequest(ctx, http.MethodPost, urlSuffix, request)
+	req, err := c.newStreamRequest(ctx, http.MethodPost, urlSuffix, &request)
 	if err != nil {
 		return
 	}

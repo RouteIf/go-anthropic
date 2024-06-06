@@ -91,7 +91,11 @@ func (c *Client) CreateMessagesStream(ctx context.Context, request MessagesStrea
 	}
 
 	urlSuffix := "/messages"
-	req, err := c.newStreamRequest(ctx, http.MethodPost, urlSuffix, request, setters...)
+	if c.IsVertexAI() {
+		urlSuffix = ":streamRawPredict"
+	}
+
+	req, err := c.newStreamRequest(ctx, http.MethodPost, urlSuffix, &request, setters...)
 	if err != nil {
 		return
 	}

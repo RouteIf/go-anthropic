@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"fmt"
 	"net/http"
 )
 
@@ -10,7 +11,8 @@ const (
 )
 
 const (
-	APIVersion20230601 = "2023-06-01"
+	APIVersion20230601       = "2023-06-01"
+	APIVersionVertex20231016 = "vertex-2023-10-16"
 )
 
 const (
@@ -18,9 +20,12 @@ const (
 	BetaTools20240516 = "tools-2024-05-16"
 )
 
+type ApiKeyFunc func() string
+
 // ClientConfig is a configuration of a client.
 type ClientConfig struct {
-	apikey string
+	apikey     string
+	apiKeyFunc ApiKeyFunc
 
 	BaseURL     string
 	APIVersion  string
@@ -79,4 +84,20 @@ func WithBetaVersion(betaVersion string) ClientOption {
 	return func(c *ClientConfig) {
 		c.BetaVersion = betaVersion
 	}
+}
+
+func WithVertexAI(projectID string, location string) ClientOption {
+	return func(c *ClientConfig) {
+		c.BaseURL = fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/anthropic/models", location, projectID, location)
+		c.APIVersion = APIVersionVertex20231016
+	}
+}
+
+func WithApiKeyFunc(apiKeyFunc ApiKeyFunc) ClientOption {
+	return func(c *ClientConfig) {
+		c.apiKeyFunc = apiKeyFunc
+	}
+}
+func isVertexAI(apiVersion string) bool {
+	return apiVersion == APIVersionVertex20231016
 }
