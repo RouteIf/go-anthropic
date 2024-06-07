@@ -68,9 +68,18 @@ func (c *Client) handlerRequestError(resp *http.Response) error {
 			}
 		}
 
-		if c.IsVertexAI() && resp.StatusCode == 401 {
+		if c.IsVertexAI() && (resp.StatusCode == 401 || resp.StatusCode == 404) {
 			var errRes VertexAIErrorResponse
 			err := json.Unmarshal(bodyBytes, &errRes)
+			if err != nil {
+				// it could be an array
+				var errResArr []VertexAIErrorResponse
+				err = json.Unmarshal(bodyBytes, &errResArr)
+				if err == nil && len(errResArr) > 0 {
+					errRes = errResArr[0]
+				}
+			}
+
 			if err != nil || errRes.Error == nil {
 				reqErr := RequestError{
 					StatusCode: resp.StatusCode,
