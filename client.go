@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 )
 
@@ -59,25 +60,34 @@ func (c *Client) sendRequest(req *http.Request, v Response) error {
 
 func (c *Client) handlerRequestError(resp *http.Response) error {
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return &RequestError{
+				StatusCode: resp.StatusCode,
+				Err:        err,
+			}
+		}
 
 		if c.IsVertexAI() && resp.StatusCode == 401 {
 			var errRes VertexAIErrorResponse
-			err := json.NewDecoder(resp.Body).Decode(&errRes)
+			err := json.Unmarshal(bodyBytes, &errRes)
 			if err != nil || errRes.Error == nil {
 				reqErr := RequestError{
 					StatusCode: resp.StatusCode,
 					Err:        err,
+					RawBody:    bodyBytes,
 				}
 				return &reqErr
 			}
 			return fmt.Errorf("error, status code: %d, message: %w", resp.StatusCode, errRes.Error)
 		} else {
 			var errRes ErrorResponse
-			err := json.NewDecoder(resp.Body).Decode(&errRes)
+			err := json.Unmarshal(bodyBytes, &errRes)
 			if err != nil || errRes.Error == nil {
 				reqErr := RequestError{
 					StatusCode: resp.StatusCode,
 					Err:        err,
+					RawBody:    bodyBytes,
 				}
 				return &reqErr
 			}

@@ -66,6 +66,7 @@ func (e *APIError) IsOverloadedErr() bool {
 type RequestError struct {
 	StatusCode int
 	Err        error
+	RawBody    []byte
 }
 
 type ErrorResponse struct {
