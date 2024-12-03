@@ -16,6 +16,8 @@ const (
 	ErrTypePermission ErrType = "permission_error"
 	// ErrTypeNotFound The requested resource was not found.
 	ErrTypeNotFound ErrType = "not_found_error"
+	// ErrTypeTooLarge Request exceeds the maximum allowed number of bytes.
+	ErrTypeTooLarge ErrType = "request_too_large"
 	// ErrTypeRateLimit Your account has hit a rate limit.
 	ErrTypeRateLimit ErrType = "rate_limit_error"
 	// ErrTypeApi An unexpected error has occurred internal to Anthropic's systems.
@@ -50,6 +52,10 @@ func (e *APIError) IsNotFoundErr() bool {
 	return e.Type == ErrTypeNotFound
 }
 
+func (e *APIError) IsTooLargeErr() bool {
+	return e.Type == ErrTypeTooLarge
+}
+
 func (e *APIError) IsRateLimitErr() bool {
 	return e.Type == ErrTypeRateLimit
 }
@@ -66,7 +72,7 @@ func (e *APIError) IsOverloadedErr() bool {
 type RequestError struct {
 	StatusCode int
 	Err        error
-	RawBody    []byte
+	Body       []byte
 }
 
 type ErrorResponse struct {
@@ -79,5 +85,10 @@ func (e *APIError) Error() string {
 }
 
 func (e *RequestError) Error() string {
-	return fmt.Sprintf("anthropic request error status code: %d, err: %s", e.StatusCode, e.Err)
+	return fmt.Sprintf(
+		"anthropic request error status code: %d, err: %s, body: %s",
+		e.StatusCode,
+		e.Err,
+		e.Body,
+	)
 }

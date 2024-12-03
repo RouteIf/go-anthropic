@@ -13,6 +13,9 @@ Anthropic Claude API wrapper for Go (Unofficial). Support:
 - Streaming Messages
 - Vision
 - Tool use
+- Prompt Caching
+- PDF
+- Token Counting
 
 ## Installation
 
@@ -37,9 +40,9 @@ import (
 )
 
 func main() {
-	client := anthropic.NewClient("your anthropic apikey")
+	client := anthropic.NewClient("your anthropic api key")
 	resp, err := client.CreateMessages(context.Background(), anthropic.MessagesRequest{
-		Model: anthropic.ModelClaudeInstant1Dot2,
+		Model: anthropic.ModelClaude3Haiku20240307,
 		Messages: []anthropic.Message{
 			anthropic.NewUserTextMessage("What is your name?"),
 		},
@@ -51,10 +54,10 @@ func main() {
 			fmt.Printf("Messages error, type: %s, message: %s", e.Type, e.Message)
 		} else {
 			fmt.Printf("Messages error: %v\n", err)
-        }
+		}
 		return
 	}
-	fmt.Println(*resp.Content[0].Text)
+	fmt.Println(resp.Content[0].GetText())
 }
 ```
 
@@ -71,14 +74,14 @@ import (
 )
 
 func main() {
-	client := anthropic.NewClient("your anthropic apikey")
-	resp, err := client.CreateMessagesStream(context.Background(),  anthropic.MessagesStreamRequest{
+	client := anthropic.NewClient("your anthropic api key")
+	resp, err := client.CreateMessagesStream(context.Background(), anthropic.MessagesStreamRequest{
 		MessagesRequest: anthropic.MessagesRequest{
-			Model: anthropic.ModelClaudeInstant1Dot2,
+			Model: anthropic.ModelClaude3Haiku20240307,
 			Messages: []anthropic.Message{
 				anthropic.NewUserTextMessage("What is your name?"),
 			},
-			MaxTokens:   1000,
+			MaxTokens: 1000,
 		},
 		OnContentBlockDelta: func(data anthropic.MessagesEventContentBlockDeltaData) {
 			fmt.Printf("Stream Content: %s\n", data.Delta.Text)
@@ -90,10 +93,10 @@ func main() {
 			fmt.Printf("Messages stream error, type: %s, message: %s", e.Type, e.Message)
 		} else {
 			fmt.Printf("Messages stream error: %v\n", err)
-        }
+		}
 		return
 	}
-	fmt.Println(*resp.Content[0].Text)
+	fmt.Println(resp.Content[0].GetText())
 }
 ```
 
@@ -113,7 +116,7 @@ import (
 )
 
 func main() {
-	client := anthropic.NewClient("your anthropic apikey")
+	client := anthropic.NewClient("your anthropic api key")
 
 	imagePath := "xxx"
 	imageMediaType := "image/jpeg"
@@ -132,11 +135,13 @@ func main() {
 			{
 				Role: anthropic.RoleUser,
 				Content: []anthropic.MessageContent{
-					anthropic.NewImageMessageContent(anthropic.MessageContentImageSource{
-						Type:      "base64",
-						MediaType: imageMediaType,
-						Data:      imageData,
-					}),
+					anthropic.NewImageMessageContent(
+						anthropic.NewMessageContentSource(
+							anthropic.MessagesContentSourceTypeBase64,
+							imageMediaType,
+							imageData,
+						),
+					),
 					anthropic.NewTextMessageContent("Describe this image."),
 				},
 			},
@@ -149,7 +154,7 @@ func main() {
 			fmt.Printf("Messages error, type: %s, message: %s", e.Type, e.Message)
 		} else {
 			fmt.Printf("Messages error: %v\n", err)
-        }
+		}
 		return
 	}
 	fmt.Println(*resp.Content[0].Text)
@@ -174,7 +179,7 @@ import (
 
 func main() {
 	client := anthropic.NewClient(
-		"your anthropic apikey",
+		"your anthropic api key",
 	)
 
 	request := anthropic.MessagesRequest{
@@ -310,8 +315,67 @@ func main() {
 ```
 </details>
 
+<details>
+<summary>Prompt Caching</summary>
+
+doc: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+
+```go
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/liushuangls/go-anthropic/v2"
+)
+
+func main() {
+	client := anthropic.NewClient(
+		"your anthropic api key",
+		anthropic.WithBetaVersion(anthropic.BetaPromptCaching20240731),
+	)
+
+	resp, err := client.CreateMessages(
+		context.Background(),
+		anthropic.MessagesRequest{
+			Model: anthropic.ModelClaude3Haiku20240307,
+			MultiSystem: []anthropic.MessageSystemPart{
+				{
+					Type: "text",
+					Text: "You are an AI assistant tasked with analyzing literary works. Your goal is to provide insightful commentary on themes, characters, and writing style.",
+				},
+				{
+					Type: "text",
+					Text: "<the entire contents of Pride and Prejudice>",
+					CacheControl: &anthropic.MessageCacheControl{
+						Type: anthropic.CacheControlTypeEphemeral,
+					},
+				},
+			},
+			Messages: []anthropic.Message{
+				anthropic.NewUserTextMessage("Analyze the major themes in Pride and Prejudice.")
+			},
+			MaxTokens: 1000,
+	})
+	if err != nil {
+		var e *anthropic.APIError
+		if errors.As(err, &e) {
+			fmt.Printf("Messages error, type: %s, message: %s", e.Type, e.Message)
+		} else {
+			fmt.Printf("Messages error: %v\n", err)
+		}
+		return
+	}
+	fmt.Printf("Usage: %+v\n", resp.Usage)
+	fmt.Println(resp.Content[0].GetText())
+}
+```
+
+</details>
+
 ## Acknowledgments
 The following project had particular influence on go-anthropic is design.
 
 - [sashabaranov/go-openai](https://github.com/sashabaranov/go-openai)
-

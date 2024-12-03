@@ -22,6 +22,7 @@ const (
 	MessagesContentTypeToolResult     MessagesContentType = "tool_result"
 	MessagesContentTypeToolUse        MessagesContentType = "tool_use"
 	MessagesContentTypeInputJsonDelta MessagesContentType = "input_json_delta"
+	MessagesContentTypeDocument       MessagesContentType = "document"
 )
 
 type MessagesStopReason string
@@ -33,31 +34,57 @@ const (
 	MessagesStopReasonToolUse      MessagesStopReason = "tool_use"
 )
 
+type MessagesContentSourceType string
+
+const (
+	MessagesContentSourceTypeBase64 = "base64"
+)
+
 type MessagesRequest struct {
-	Model            string    `json:"model,omitempty"`
+	Model            Model     `json:"model,omitempty"`
 	AnthropicVersion string    `json:"anthropic_version,omitempty"`
 	Messages         []Message `json:"messages"`
-	MaxTokens        int       `json:"max_tokens"`
+	MaxTokens        int       `json:"max_tokens,omitempty"`
 
-	System        string           `json:"system,omitempty"`
-	Metadata      map[string]any   `json:"metadata,omitempty"`
-	StopSequences []string         `json:"stop_sequences,omitempty"`
-	Stream        bool             `json:"stream,omitempty"`
-	Temperature   *float32         `json:"temperature,omitempty"`
-	TopP          *float32         `json:"top_p,omitempty"`
-	TopK          *int             `json:"top_k,omitempty"`
-	Tools         []ToolDefinition `json:"tools,omitempty"`
-	ToolChoice    *ToolChoice      `json:"tool_choice,omitempty"`
+	System        string              `json:"-"`
+	MultiSystem   []MessageSystemPart `json:"-"`
+	Metadata      map[string]any      `json:"metadata,omitempty"`
+	StopSequences []string            `json:"stop_sequences,omitempty"`
+	Stream        bool                `json:"stream,omitempty"`
+	Temperature   *float32            `json:"temperature,omitempty"`
+	TopP          *float32            `json:"top_p,omitempty"`
+	TopK          *int                `json:"top_k,omitempty"`
+	Tools         []ToolDefinition    `json:"tools,omitempty"`
+	ToolChoice    *ToolChoice         `json:"tool_choice,omitempty"`
+}
+
+func (m MessagesRequest) MarshalJSON() ([]byte, error) {
+	type Alias MessagesRequest
+	aux := struct {
+		System interface{} `json:"system,omitempty"`
+		Alias
+	}{
+		Alias: (Alias)(m),
+	}
+
+	// 根据 MultiSystem 是否为空来设置 system 字段
+	if len(m.MultiSystem) > 0 {
+		aux.System = m.MultiSystem
+	} else if len(m.System) > 0 {
+		aux.System = m.System
+	}
+
+	return json.Marshal(aux)
 }
 
 var _ VertexAISupport = (*MessagesRequest)(nil)
 
-func (m MessagesRequest) GetModel() string {
+func (m MessagesRequest) GetModel() Model {
 	return m.Model
 }
 
-func (m *MessagesRequest) SetAnthropicVersion(version string) {
-	m.AnthropicVersion = version
+func (m *MessagesRequest) SetAnthropicVersion(version APIVersion) {
+	m.AnthropicVersion = string(version)
 	m.Model = ""
 }
 
@@ -73,8 +100,29 @@ func (m *MessagesRequest) SetTopK(k int) {
 	m.TopK = &k
 }
 
+type MessageSystemPart struct {
+	Type         string               `json:"type"`
+	Text         string               `json:"text"`
+	CacheControl *MessageCacheControl `json:"cache_control,omitempty"`
+}
+
+func NewMultiSystemMessages(texts ...string) []MessageSystemPart {
+	var systemParts []MessageSystemPart
+	for _, text := range texts {
+		systemParts = append(systemParts, NewSystemMessagePart(text))
+	}
+	return systemParts
+}
+
+func NewSystemMessagePart(text string) MessageSystemPart {
+	return MessageSystemPart{
+		Type: "text",
+		Text: text,
+	}
+}
+
 type Message struct {
-	Role    string           `json:"role"`
+	Role    ChatRole         `json:"role"`
 	Content []MessageContent `json:"content"`
 }
 
@@ -106,18 +154,30 @@ func (m Message) GetFirstContent() MessageContent {
 	return m.Content[0]
 }
 
+type CacheControlType string
+
+const (
+	CacheControlTypeEphemeral CacheControlType = "ephemeral"
+)
+
+type MessageCacheControl struct {
+	Type CacheControlType `json:"type"`
+}
+
 type MessageContent struct {
 	Type MessagesContentType `json:"type"`
 
 	Text *string `json:"text,omitempty"`
 
-	Source *MessageContentImageSource `json:"source,omitempty"`
+	Source *MessageContentSource `json:"source,omitempty"`
 
 	*MessageContentToolResult
 
 	*MessageContentToolUse
 
 	PartialJson *string `json:"partial_json,omitempty"`
+
+	CacheControl *MessageCacheControl `json:"cache_control,omitempty"`
 }
 
 func NewTextMessageContent(text string) MessageContent {
@@ -127,9 +187,16 @@ func NewTextMessageContent(text string) MessageContent {
 	}
 }
 
-func NewImageMessageContent(source MessageContentImageSource) MessageContent {
+func NewImageMessageContent(source MessageContentSource) MessageContent {
 	return MessageContent{
 		Type:   MessagesContentTypeImage,
+		Source: &source,
+	}
+}
+
+func NewDocumentMessageContent(source MessageContentSource) MessageContent {
+	return MessageContent{
+		Type:   MessagesContentTypeDocument,
 		Source: &source,
 	}
 }
@@ -143,12 +210,18 @@ func NewToolResultMessageContent(toolUseID, content string, isError bool) Messag
 
 func NewToolUseMessageContent(toolUseID, name string, input json.RawMessage) MessageContent {
 	return MessageContent{
-		Type: MessagesContentTypeToolUse,
-		MessageContentToolUse: &MessageContentToolUse{
-			ID:    toolUseID,
-			Name:  name,
-			Input: input,
-		},
+		Type:                  MessagesContentTypeToolUse,
+		MessageContentToolUse: NewMessageContentToolUse(toolUseID, name, input),
+	}
+}
+
+func (m *MessageContent) SetCacheControl(ts ...CacheControlType) {
+	t := CacheControlTypeEphemeral
+	if len(ts) > 0 {
+		t = ts[0]
+	}
+	m.CacheControl = &MessageCacheControl{
+		Type: t,
 	}
 }
 
@@ -197,7 +270,10 @@ type MessageContentToolResult struct {
 	IsError   *bool            `json:"is_error,omitempty"`
 }
 
-func NewMessageContentToolResult(toolUseID, content string, isError bool) *MessageContentToolResult {
+func NewMessageContentToolResult(
+	toolUseID, content string,
+	isError bool,
+) *MessageContentToolResult {
 	return &MessageContentToolResult{
 		ToolUseID: &toolUseID,
 		Content: []MessageContent{
@@ -210,16 +286,39 @@ func NewMessageContentToolResult(toolUseID, content string, isError bool) *Messa
 	}
 }
 
-type MessageContentImageSource struct {
-	Type      string `json:"type"`
-	MediaType string `json:"media_type"`
-	Data      any    `json:"data"`
+type MessageContentSource struct {
+	Type      MessagesContentSourceType `json:"type"`
+	MediaType string                    `json:"media_type"`
+	Data      any                       `json:"data"`
+}
+
+func NewMessageContentSource(
+	sourceType MessagesContentSourceType,
+	mediaType string,
+	data any,
+) MessageContentSource {
+	return MessageContentSource{
+		Type:      sourceType,
+		MediaType: mediaType,
+		Data:      data,
+	}
 }
 
 type MessageContentToolUse struct {
 	ID    string          `json:"id,omitempty"`
 	Name  string          `json:"name,omitempty"`
 	Input json.RawMessage `json:"input,omitempty"`
+}
+
+func NewMessageContentToolUse(
+	toolUseId, name string,
+	input json.RawMessage,
+) *MessageContentToolUse {
+	return &MessageContentToolUse{
+		ID:    toolUseId,
+		Name:  name,
+		Input: input,
+	}
 }
 
 func (c *MessageContentToolUse) UnmarshalInput(v any) error {
@@ -231,9 +330,9 @@ type MessagesResponse struct {
 
 	ID           string               `json:"id"`
 	Type         MessagesResponseType `json:"type"`
-	Role         string               `json:"role"`
+	Role         ChatRole             `json:"role"`
 	Content      []MessageContent     `json:"content"`
-	Model        string               `json:"model"`
+	Model        Model                `json:"model"`
 	StopReason   MessagesStopReason   `json:"stop_reason"`
 	StopSequence string               `json:"stop_sequence"`
 	Usage        MessagesUsage        `json:"usage"`
@@ -250,6 +349,11 @@ func (m MessagesResponse) GetFirstContentText() string {
 type MessagesUsage struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
+
+	// The number of tokens written to the cache when creating a new entry.
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	// The number of tokens retrieved from the cache for associated request.
+	CacheReadInputTokens int `json:"cache_read_input_tokens,omitempty"`
 }
 
 type ToolDefinition struct {
@@ -261,6 +365,8 @@ type ToolDefinition struct {
 	// The jsonschema package is provided for convenience, but you should
 	// consider another specialized library if you require more complex schemas.
 	InputSchema any `json:"input_schema"`
+
+	CacheControl *MessageCacheControl `json:"cache_control,omitempty"`
 }
 
 type ToolChoice struct {
@@ -269,12 +375,15 @@ type ToolChoice struct {
 	Name string `json:"name,omitempty"`
 }
 
-func (c *Client) CreateMessages(ctx context.Context, request MessagesRequest) (response MessagesResponse, err error) {
+func (c *Client) CreateMessages(
+	ctx context.Context,
+	request MessagesRequest,
+) (response MessagesResponse, err error) {
 	request.Stream = false
 
 	var setters []requestSetter
-	if len(request.Tools) > 0 {
-		setters = append(setters, withBetaVersion(c.config.BetaVersion))
+	if len(c.config.BetaVersion) > 0 {
+		setters = append(setters, withBetaVersion(c.config.BetaVersion...))
 	}
 
 	urlSuffix := "/messages"

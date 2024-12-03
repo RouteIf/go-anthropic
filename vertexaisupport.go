@@ -6,6 +6,6 @@ package anthropic
 // The version of the API is defined in the request body
 // This interface allows the vertex ai changes to be contained in the client code, and not leak to each indivdual request definition.
 type VertexAISupport interface {
-	GetModel() string
-	SetAnthropicVersion(string)
+	GetModel() Model
+	SetAnthropicVersion(APIVersion)
 }

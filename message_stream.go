@@ -82,12 +82,15 @@ type MessagesEventMessageStopData struct {
 	Type string `json:"type"`
 }
 
-func (c *Client) CreateMessagesStream(ctx context.Context, request MessagesStreamRequest) (response MessagesResponse, err error) {
+func (c *Client) CreateMessagesStream(
+	ctx context.Context,
+	request MessagesStreamRequest,
+) (response MessagesResponse, err error) {
 	request.Stream = true
 
 	var setters []requestSetter
-	if len(request.Tools) > 0 {
-		setters = append(setters, withBetaVersion(c.config.BetaVersion))
+	if len(c.config.BetaVersion) > 0 {
+		setters = append(setters, withBetaVersion(c.config.BetaVersion...))
 	}
 
 	urlSuffix := "/messages"
@@ -167,6 +170,7 @@ func (c *Client) CreateMessagesStream(ctx context.Context, request MessagesStrea
 					request.OnMessageStart(d)
 				}
 				response = d.Message
+				response.SetHeader(resp.Header)
 				continue
 			case MessagesEventContentBlockStart:
 				var d MessagesEventContentBlockStartData

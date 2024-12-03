@@ -9,15 +9,30 @@ jobs:
     name: Sanity check
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
+
     - name: Setup Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version-file: go.mod
+
     - name: Run tests
       run: go test -race -covermode=atomic -coverprofile=coverage.out -v .
+
     - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v4.0.1
+      uses: codecov/codecov-action@v5.0.7
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         slug: liushuangls/go-anthropic
+
+    - name: Golines format check
+      run: |
+        go install github.com/segmentio/golines@latest
+        change=$(golines --dry-run .)
+        if [ -n "$change" ]; then
+          echo "::error:: golines needs to be run, and changes committed. Please run:"
+          echo "::error:: go install github.com/segmentio/golines@latest"
+          echo "::error:: golines -w ."
+          echo "$change"
+          exit 1
+        fi

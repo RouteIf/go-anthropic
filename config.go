@@ -10,26 +10,34 @@ const (
 	defaultEmptyMessagesLimit uint = 300
 )
 
-const (
-	APIVersion20230601       = "2023-06-01"
-	APIVersionVertex20231016 = "vertex-2023-10-16"
-)
+type APIVersion string
 
 const (
-	BetaTools20240404 = "tools-2024-04-04"
-	BetaTools20240516 = "tools-2024-05-16"
+	APIVersion20230601       APIVersion = "2023-06-01"
+	APIVersionVertex20231016 APIVersion = "vertex-2023-10-16"
+)
+
+type BetaVersion string
+
+const (
+	BetaTools20240404             BetaVersion = "tools-2024-04-04"
+	BetaTools20240516             BetaVersion = "tools-2024-05-16"
+	BetaPromptCaching20240731     BetaVersion = "prompt-caching-2024-07-31"
+	BetaMessageBatches20240924    BetaVersion = "message-batches-2024-09-24"
+	BetaTokenCounting20241101     BetaVersion = "token-counting-2024-11-01"
+	BetaMaxTokens35Sonnet20240715 BetaVersion = "max-tokens-3-5-sonnet-2024-07-15"
 )
 
 type ApiKeyFunc func() string
 
 // ClientConfig is a configuration of a client.
 type ClientConfig struct {
-	apikey     string
 	apiKeyFunc ApiKeyFunc
+	apiKey     string
 
 	BaseURL     string
-	APIVersion  string
-	BetaVersion string
+	APIVersion  APIVersion
+	BetaVersion []BetaVersion
 	HTTPClient  *http.Client
 
 	EmptyMessagesLimit uint
@@ -37,14 +45,13 @@ type ClientConfig struct {
 
 type ClientOption func(c *ClientConfig)
 
-func newConfig(apikey string, opts ...ClientOption) ClientConfig {
+func newConfig(apiKey string, opts ...ClientOption) ClientConfig {
 	c := ClientConfig{
-		apikey: apikey,
+		apiKey: apiKey,
 
-		BaseURL:     anthropicAPIURLv1,
-		APIVersion:  APIVersion20230601,
-		BetaVersion: BetaTools20240516,
-		HTTPClient:  &http.Client{},
+		BaseURL:    anthropicAPIURLv1,
+		APIVersion: APIVersion20230601,
+		HTTPClient: &http.Client{},
 
 		EmptyMessagesLimit: defaultEmptyMessagesLimit,
 	}
@@ -62,7 +69,7 @@ func WithBaseURL(baseUrl string) ClientOption {
 	}
 }
 
-func WithAPIVersion(apiVersion string) ClientOption {
+func WithAPIVersion(apiVersion APIVersion) ClientOption {
 	return func(c *ClientConfig) {
 		c.APIVersion = apiVersion
 	}
@@ -80,7 +87,7 @@ func WithEmptyMessagesLimit(limit uint) ClientOption {
 	}
 }
 
-func WithBetaVersion(betaVersion string) ClientOption {
+func WithBetaVersion(betaVersion ...BetaVersion) ClientOption {
 	return func(c *ClientConfig) {
 		c.BetaVersion = betaVersion
 	}
@@ -98,6 +105,6 @@ func WithApiKeyFunc(apiKeyFunc ApiKeyFunc) ClientOption {
 		c.apiKeyFunc = apiKeyFunc
 	}
 }
-func isVertexAI(apiVersion string) bool {
+func isVertexAI(apiVersion APIVersion) bool {
 	return apiVersion == APIVersionVertex20231016
 }

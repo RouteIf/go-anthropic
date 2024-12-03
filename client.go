@@ -27,14 +27,14 @@ func (h *httpHeader) Header() http.Header {
 	return http.Header(*h)
 }
 
-func (h *httpHeader) GetRateLimitHeaders() RateLimitHeaders {
+func (h *httpHeader) GetRateLimitHeaders() (RateLimitHeaders, error) {
 	return newRateLimitHeaders(h.Header())
 }
 
 // NewClient create new Anthropic API client
-func NewClient(apikey string, opts ...ClientOption) *Client {
+func NewClient(apiKey string, opts ...ClientOption) *Client {
 	return &Client{
-		config: newConfig(apikey, opts...),
+		config: newConfig(apiKey, opts...),
 	}
 }
 
@@ -60,21 +60,28 @@ func (c *Client) sendRequest(req *http.Request, v Response) error {
 
 func (c *Client) handlerRequestError(resp *http.Response) error {
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
-		bodyBytes, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return &RequestError{
+			return fmt.Errorf("error, reading response body: %w", err)
+		}
+		var errRes ErrorResponse
+		err = json.Unmarshal(body, &errRes)
+		if err != nil || errRes.Error == nil {
+			reqErr := RequestError{
 				StatusCode: resp.StatusCode,
 				Err:        err,
+				Body:       body,
 			}
+			return &reqErr
 		}
 
 		if c.IsVertexAI() && (resp.StatusCode == 401 || resp.StatusCode == 404 || resp.StatusCode == 429) {
 			var errRes VertexAIErrorResponse
-			err := json.Unmarshal(bodyBytes, &errRes)
+			err := json.Unmarshal(body, &errRes)
 			if err != nil {
 				// it could be an array
 				var errResArr []VertexAIErrorResponse
-				err = json.Unmarshal(bodyBytes, &errResArr)
+				err = json.Unmarshal(body, &errResArr)
 				if err == nil && len(errResArr) > 0 {
 					errRes = errResArr[0]
 				}
@@ -84,30 +91,31 @@ func (c *Client) handlerRequestError(resp *http.Response) error {
 				reqErr := RequestError{
 					StatusCode: resp.StatusCode,
 					Err:        err,
-					RawBody:    bodyBytes,
+					Body:       body,
 				}
 				return &reqErr
 			}
 			return fmt.Errorf("error, status code: %d, message: %w", resp.StatusCode, errRes.Error)
 		} else {
 			var errRes ErrorResponse
-			err := json.Unmarshal(bodyBytes, &errRes)
+			err := json.Unmarshal(body, &errRes)
 			if err != nil || errRes.Error == nil {
 				reqErr := RequestError{
 					StatusCode: resp.StatusCode,
 					Err:        err,
-					RawBody:    bodyBytes,
+					Body:       body,
 				}
 				return &reqErr
 			}
 
 			return fmt.Errorf("error, status code: %d, message: %w", resp.StatusCode, errRes.Error)
 		}
+
 	}
 	return nil
 }
 
-func (c *Client) fullURL(suffix string, model string) string {
+func (c *Client) fullURL(suffix string, model Model) string {
 	if isVertexAI(c.config.APIVersion) {
 		// replace the first slash with a colon
 		return fmt.Sprintf("%s/%s:%s", c.config.BaseURL, translateVertexModel(model), suffix[1:])
@@ -118,15 +126,28 @@ func (c *Client) fullURL(suffix string, model string) string {
 
 type requestSetter func(req *http.Request)
 
-func withBetaVersion(version string) requestSetter {
+func withBetaVersion(betaVersion ...BetaVersion) requestSetter {
+	version := ""
+	for i, v := range betaVersion {
+		version += string(v)
+		if i < len(betaVersion)-1 {
+			version += ","
+		}
+	}
+
 	return func(req *http.Request) {
 		req.Header.Set("anthropic-beta", version)
 	}
 }
 
-func (c *Client) newRequest(ctx context.Context, method, urlSuffix string, body any, requestSetters ...requestSetter) (req *http.Request, err error) {
+func (c *Client) newRequest(
+	ctx context.Context,
+	method, urlSuffix string,
+	body any,
+	requestSetters ...requestSetter,
+) (req *http.Request, err error) {
 	// if the body implements the ModelGetter interface, use the model from the body
-	model := ""
+	model := Model("")
 	if isVertexAI(c.config.APIVersion) && body != nil {
 		if vertexAISupport, ok := body.(VertexAISupport); ok {
 			model = vertexAISupport.GetModel()
@@ -144,7 +165,12 @@ func (c *Client) newRequest(ctx context.Context, method, urlSuffix string, body 
 		}
 	}
 
-	req, err = http.NewRequestWithContext(ctx, method, c.fullURL(urlSuffix, model), bytes.NewBuffer(reqBody))
+	req, err = http.NewRequestWithContext(
+		ctx,
+		method,
+		c.fullURL(urlSuffix, model),
+		bytes.NewBuffer(reqBody),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +178,7 @@ func (c *Client) newRequest(ctx context.Context, method, urlSuffix string, body 
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("Accept", "application/json; charset=utf-8")
 
-	apiKey := c.config.apikey
+	apiKey := c.config.apiKey
 	if c.config.apiKeyFunc != nil {
 		apiKey = c.config.apiKeyFunc()
 	}
@@ -161,7 +187,7 @@ func (c *Client) newRequest(ctx context.Context, method, urlSuffix string, body 
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	} else {
 		req.Header.Set("X-Api-Key", apiKey)
-		req.Header.Set("Anthropic-Version", c.config.APIVersion)
+		req.Header.Set("Anthropic-Version", string(c.config.APIVersion))
 	}
 
 	for _, setter := range requestSetters {
@@ -171,7 +197,12 @@ func (c *Client) newRequest(ctx context.Context, method, urlSuffix string, body 
 	return req, nil
 }
 
-func (c *Client) newStreamRequest(ctx context.Context, method, urlSuffix string, body any, requestSetters ...requestSetter) (req *http.Request,
+func (c *Client) newStreamRequest(
+	ctx context.Context,
+	method, urlSuffix string,
+	body any,
+	requestSetters ...requestSetter,
+) (req *http.Request,
 	err error) {
 	req, err = c.newRequest(ctx, method, urlSuffix, body, requestSetters...)
 	if err != nil {

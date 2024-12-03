@@ -33,7 +33,7 @@ func TestCompleteStream(t *testing.T) {
 	var receivedContent string
 	resp, err := client.CreateCompleteStream(context.Background(), anthropic.CompleteStreamRequest{
 		CompleteRequest: anthropic.CompleteRequest{
-			Model:             anthropic.ModelClaudeInstant1Dot2,
+			Model:             anthropic.ModelClaude3Haiku20240307,
 			Prompt:            "\n\nHuman: What is your name?\n\nAssistant:",
 			MaxTokensToSample: 1000,
 		},
@@ -50,10 +50,18 @@ func TestCompleteStream(t *testing.T) {
 
 	expected := strings.Join(testCompletionStreamContent, "")
 	if receivedContent != expected {
-		t.Fatalf("CreateCompleteStream content not match expected: %s, got: %s", expected, receivedContent)
+		t.Fatalf(
+			"CreateCompleteStream content not match expected: %s, got: %s",
+			expected,
+			receivedContent,
+		)
 	}
 	if resp.Completion != expected {
-		t.Fatalf("CreateCompleteStream content not match expected: %s, got: %s", expected, resp.Completion)
+		t.Fatalf(
+			"CreateCompleteStream content not match expected: %s, got: %s",
+			expected,
+			resp.Completion,
+		)
 	}
 	t.Logf("CreateCompleteStream resp: %+v", resp)
 }
@@ -74,7 +82,7 @@ func TestCompleteStreamError(t *testing.T) {
 	var receivedContent string
 	param := anthropic.CompleteStreamRequest{
 		CompleteRequest: anthropic.CompleteRequest{
-			Model:             anthropic.ModelClaudeInstant1Dot2,
+			Model:             anthropic.ModelClaude3Haiku20240307,
 			Prompt:            "\n\nHuman: What is your name?\n\nAssistant:",
 			MaxTokensToSample: 1000,
 			//Temperature:       &temperature,
@@ -99,7 +107,7 @@ func TestCompleteStreamError(t *testing.T) {
 }
 
 func handlerCompleteStream(w http.ResponseWriter, r *http.Request) {
-	request, err := getCompleteRequest(r)
+	request, err := getRequest[anthropic.CompleteStreamRequest](r)
 	if err != nil {
 		http.Error(w, "request error", http.StatusBadRequest)
 		return
@@ -114,16 +122,31 @@ func handlerCompleteStream(w http.ResponseWriter, r *http.Request) {
 
 	if request.Temperature != nil && *request.Temperature > 1 {
 		dataBytes = append(dataBytes, []byte("event: error\n")...)
-		dataBytes = append(dataBytes, []byte(`data: {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}`+"\n\n")...)
+		dataBytes = append(
+			dataBytes,
+			[]byte(
+				`data: {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}`+"\n\n",
+			)...)
 	}
 
 	for _, t := range testCompletionStreamContent {
 		dataBytes = append(dataBytes, []byte("event: completion\n")...)
-		dataBytes = append(dataBytes, []byte(fmt.Sprintf(`data: {"type":"completion","id":"compl_01GatBXF5t5K51mYzbVgRJfZ","completion":"%s","stop_reason":null,"model":"claude-instant-1.2","stop":null,"log_id":"compl_01GatBXF5t5K51mYzbVgRJfZ"}`, t)+"\n\n")...)
+		dataBytes = append(
+			dataBytes,
+			[]byte(
+				fmt.Sprintf(
+					`data: {"type":"completion","id":"compl_01GatBXF5t5K51mYzbVgRJfZ","completion":"%s","stop_reason":null,"model":"claude-3-haiku-20240307","stop":null,"log_id":"compl_01GatBXF5t5K51mYzbVgRJfZ"}`,
+					t,
+				)+"\n\n",
+			)...)
 	}
 
 	dataBytes = append(dataBytes, []byte("event: completion\n")...)
-	dataBytes = append(dataBytes, []byte(`data: {"type":"completion","id":"compl_01GatBXF5t5K51mYzbVgRJfZ","completion":"","stop_reason":"stop_sequence","model":"claude-instant-1.2","stop":null,"log_id":"compl_01GatBXF5t5K51mYzbVgRJfZ"}`+"\n\n")...)
+	dataBytes = append(
+		dataBytes,
+		[]byte(
+			`data: {"type":"completion","id":"compl_01GatBXF5t5K51mYzbVgRJfZ","completion":"","stop_reason":"stop_sequence","model":"claude-3-haiku-20240307","stop":null,"log_id":"compl_01GatBXF5t5K51mYzbVgRJfZ"}`+"\n\n",
+		)...)
 
 	_, _ = w.Write(dataBytes)
 }
