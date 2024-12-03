@@ -68,7 +68,7 @@ func (c *Client) handlerRequestError(resp *http.Response) error {
 			}
 		}
 
-		if c.IsVertexAI() && (resp.StatusCode == 401 || resp.StatusCode == 404) {
+		if c.IsVertexAI() && (resp.StatusCode == 401 || resp.StatusCode == 404 || resp.StatusCode == 429) {
 			var errRes VertexAIErrorResponse
 			err := json.Unmarshal(bodyBytes, &errRes)
 			if err != nil {
